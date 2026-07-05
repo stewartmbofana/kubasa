@@ -1,0 +1,250 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: counters
+// Document ID: "kubasaId"
+// Fields:
+//   - current: number (required) — sequential counter value
+//
+// Collection: users
+// Document ID: {uid}
+// Fields:
+//   - uid: string (required, immutable) — Firebase Auth UID
+//   - email: string (required, immutable) — user email
+//   - role: string (required, immutable by self) — "candidate" | "employer" | "admin"
+//   - createdAt: timestamp (required, immutable)
+//
+// Collection: candidates
+// Document ID: {uid}
+// Fields:
+//   - uid: string (required, immutable)
+//   - kubasaId: string (required, immutable) — e.g. "KBS-00001"
+//   - fullName: string (required) — 2..100 chars
+//   - email: string (required, immutable)
+//   - phone: string (optional) — 0..20 chars
+//   - bio: string (optional) — 0..2000 chars
+//   - skills: list (optional) — max 50 items, each string ≤ 60 chars
+//   - education: list (optional) — max 10 items (maps)
+//   - workExperience: list (optional) — max 20 items (maps)
+//   - cvUrl: string (optional) — https URL
+//   - cvPath: string (optional) — storage path scoped to "cvs/{uid}/"
+//   - isLookingForWork: bool (required)
+//   - createdAt: timestamp (required, immutable)
+//   - updatedAt: timestamp (required)
+//
+// Collection: employers
+// Document ID: {uid}
+// Fields:
+//   - uid: string (required, immutable)
+//   - companyName: string (required) — 2..200 chars
+//   - contactName: string (required) — 2..100 chars
+//   - email: string (required, immutable)
+//   - phone: string (optional) — 0..20 chars
+//   - industry: string (optional) — 0..100 chars
+//   - website: string (optional) — https URL
+//   - approvalStatus: string (required) — "pending" | "approved" | "rejected"
+//   - shortlist: list (optional) — max 500 items, each string UID ≤ 128 chars
+//   - createdAt: timestamp (required, immutable)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isApprovedEmployer() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'employer' &&
+        get(/databases/$(database)/documents/employers/$(request.auth.uid)).data.approvalStatus == 'approved';
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+        (url.matches('^https://.*') || url.matches('^http://.*')) &&
+        url.size() <= 2048;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches('^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$') &&
+        email.size() <= 254;
+    }
+
+    function isRecent(time) {
+      return time is timestamp &&
+        time > request.time - duration.value(5, 'm') &&
+        time <= request.time;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUserCreate(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'role', 'createdAt']) &&
+        data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
+        isValidEmail(data.email) &&
+        (data.role in ['candidate', 'employer'] || (data.role == 'admin' && data.email == 'admin@kubasa.com')) &&
+        data.createdAt is timestamp &&
+        isRecent(data.createdAt);
+    }
+
+    function isValidCandidateCreate(data) {
+      return hasOnlyAllowedFields([
+          'uid', 'kubasaId', 'fullName', 'email', 'phone', 'bio',
+          'skills', 'education', 'workExperience', 'cvUrl', 'cvPath',
+          'isLookingForWork', 'createdAt', 'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
+        data.kubasaId is string && data.kubasaId.matches('^KBS-[0-9]{5,}$') &&
+        data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100 &&
+        isValidEmail(data.email) &&
+        data.isLookingForWork is bool &&
+        data.createdAt is timestamp && isRecent(data.createdAt) &&
+        data.updatedAt is timestamp && isRecent(data.updatedAt);
+    }
+
+    function isValidCandidateUpdate(data) {
+      return hasOnlyAllowedFields([
+          'uid', 'kubasaId', 'fullName', 'email', 'phone', 'bio',
+          'skills', 'education', 'workExperience', 'cvUrl', 'cvPath',
+          'isLookingForWork', 'createdAt', 'updatedAt'
+        ]) &&
+        data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100 &&
+        data.isLookingForWork is bool &&
+        data.updatedAt is timestamp && isRecent(data.updatedAt) &&
+        areImmutableFieldsUnchanged(['uid', 'kubasaId', 'email', 'createdAt']);
+    }
+
+    function isValidEmployerCreate(data) {
+      return hasOnlyAllowedFields([
+          'uid', 'companyName', 'contactName', 'email', 'phone',
+          'industry', 'website', 'approvalStatus', 'shortlist', 'createdAt'
+        ]) &&
+        data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
+        data.companyName is string && data.companyName.size() >= 2 && data.companyName.size() <= 200 &&
+        data.contactName is string && data.contactName.size() >= 2 && data.contactName.size() <= 100 &&
+        isValidEmail(data.email) &&
+        data.approvalStatus == 'pending' &&
+        data.createdAt is timestamp && isRecent(data.createdAt);
+    }
+
+    function isValidEmployerSelfUpdate(data) {
+      return hasOnlyAllowedFields([
+          'uid', 'companyName', 'contactName', 'email', 'phone',
+          'industry', 'website', 'approvalStatus', 'shortlist', 'createdAt'
+        ]) &&
+        data.companyName is string && data.companyName.size() >= 2 && data.companyName.size() <= 200 &&
+        data.contactName is string && data.contactName.size() >= 2 && data.contactName.size() <= 100 &&
+        areImmutableFieldsUnchanged(['uid', 'email', 'approvalStatus', 'createdAt']);
+    }
+
+    function isValidShortlistUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shortlist']) &&
+        request.resource.data.shortlist is list &&
+        request.resource.data.shortlist.size() <= 500;
+    }
+
+    function isValidAdminEmployerUpdate(data) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus']) &&
+        data.approvalStatus in ['approved', 'rejected'];
+    }
+
+    // ===============================================================
+    // counters/{counterId}
+    // ===============================================================
+    match /counters/{counterId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // ===============================================================
+    // users/{uid}
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) &&
+        uidUnchanged() &&
+        isValidUserCreate(request.resource.data) &&
+        request.resource.data.uid == userId;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ===============================================================
+    // candidates/{uid}
+    // ===============================================================
+    match /candidates/{userId} {
+      allow read: if isOwner(userId) ||
+        isAdmin() ||
+        (isApprovedEmployer() && resource.data.isLookingForWork == true);
+      allow create: if isOwner(userId) &&
+        uidUnchanged() &&
+        isValidCandidateCreate(request.resource.data) &&
+        request.resource.data.uid == userId &&
+        request.resource.data.email == request.auth.token.email;
+      allow update: if isOwner(userId) &&
+        uidNotModified() &&
+        isValidCandidateUpdate(request.resource.data);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // ===============================================================
+    // employers/{uid}
+    // ===============================================================
+    match /employers/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) &&
+        uidUnchanged() &&
+        isValidEmployerCreate(request.resource.data) &&
+        request.resource.data.uid == userId &&
+        request.resource.data.email == request.auth.token.email;
+      allow update: if
+        (isOwner(userId) && isValidEmployerSelfUpdate(request.resource.data)) ||
+        (isApprovedEmployer() && isOwner(userId) && isValidShortlistUpdate()) ||
+        (isAdmin() && isValidAdminEmployerUpdate(request.resource.data));
+      allow delete: if isAdmin();
+    }
+  }
+}

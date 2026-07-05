@@ -1,0 +1,15 @@
+{
+  "version": "2",
+  "projectNumber": "969629472426",
+  "projectId": "kubasa",
+  "appId": "1:969629472426:web:be9c17daef70e19d5d22d3",
+  "realtimeDatabaseInstanceUri": "https://kubasa-default-rtdb.europe-west1.firebasedatabase.app",
+  "realtimeDatabaseUrl": "",
+  "storageBucket": "kubasa.firebasestorage.app",
+  "locationId": "",
+  "apiKey": "AIzaSyC-jKcNYybqiExdKmpWCL1F5E77JyXBLMc",
+  "authDomain": "kubasa.firebaseapp.com",
+  "messagingSenderId": "969629472426",
+  "measurementId": "",
+  "recaptchaSiteKey": ""
+}
