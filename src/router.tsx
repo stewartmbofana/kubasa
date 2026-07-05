@@ -66,6 +66,18 @@ interface EmployerDoc {
   createdAt: any;
 }
 
+interface JobDoc {
+  id: string;
+  employerUid: string;
+  companyName: string;
+  title: string;
+  description: string;
+  location: string;
+  salaryRange?: string;
+  requirements?: string[];
+  createdAt: any;
+}
+
 // ================================================================
 // Auth Observer Hook
 // ================================================================
@@ -192,12 +204,16 @@ const rootRoute = createRootRoute({
                 {currentUser && userDoc && (
                   <>
                     {userDoc.role === 'candidate' && (
-                      <Link to="/candidates/profile" className="navbar__link">My Profile</Link>
+                      <>
+                        <Link to="/candidates/profile" className="navbar__link">My Profile</Link>
+                        <Link to="/candidates/jobs" className="navbar__link">Browse Jobs</Link>
+                      </>
                     )}
                     {userDoc.role === 'employer' && (
                       <>
                         <Link to="/employers/candidates" className="navbar__link">Candidates</Link>
                         <Link to="/employers/shortlist" className="navbar__link">Shortlist</Link>
+                        <Link to="/employers/jobs" className="navbar__link">My Jobs</Link>
                       </>
                     )}
                     {userDoc.role === 'admin' && (
@@ -261,7 +277,7 @@ const rootRoute = createRootRoute({
 async function seedMockData() {
   showToast('Seeding database... Please wait.', 'info');
 
-  const seedUser = async (email: string, role: 'candidate' | 'employer' | 'admin', firestoreData: any) => {
+  const seedUser = async (email: string, role: 'candidate' | 'employer' | 'admin', firestoreData: any): Promise<string> => {
     let uid = '';
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, 'password123');
@@ -273,15 +289,15 @@ async function seedMockData() {
           if (cred.user) uid = cred.user.uid;
         } catch (signInErr) {
           console.error('Failed to resolve existing mock credentials:', signInErr);
-          return;
+          return '';
         }
       } else {
         console.error('Seeding credentials failed:', err);
-        return;
+        return '';
       }
     }
 
-    if (!uid) return;
+    if (!uid) return '';
 
     const userDocRef = db.collection('users').doc(uid);
     const userSnap = await userDocRef.get();
@@ -318,6 +334,7 @@ async function seedMockData() {
         });
       }
     }
+    return uid;
   };
 
   // Seed Admin first (authenticates client SDK as admin@kubasa.com)
@@ -327,7 +344,7 @@ async function seedMockData() {
   await db.collection('counters').doc('kubasaId').set({ current: 5 });
 
   // Seed Approved Employer
-  await seedUser('employer@acme.com', 'employer', {
+  const employerUid = await seedUser('employer@acme.com', 'employer', {
     companyName: 'Acme Solutions',
     contactName: 'John Doe',
     phone: '+254 711 111 222',
@@ -360,7 +377,7 @@ async function seedMockData() {
   });
 
   // Seed Candidates
-  await seedUser('candidate1@gmail.com', 'candidate', {
+  const c1Uid = await seedUser('candidate1@gmail.com', 'candidate', {
     kubasaId: 'KBS-00001',
     fullName: 'Jane Wambui',
     phone: '+254 720 000 001',
@@ -375,7 +392,7 @@ async function seedMockData() {
     ]
   });
 
-  await seedUser('candidate2@gmail.com', 'candidate', {
+  const c2Uid = await seedUser('candidate2@gmail.com', 'candidate', {
     kubasaId: 'KBS-00002',
     fullName: 'David Ochieng',
     phone: '+254 731 000 002',
@@ -434,6 +451,74 @@ async function seedMockData() {
       { company: 'Cape Analytics', role: 'Junior Data Scientist', startYear: '2022', endYear: '2024', description: 'Developed predictive customer churn models with 87% accuracy.' }
     ]
   });
+
+  // Seed Mock Jobs and Applications (requires active employer session)
+  try {
+    await auth.signInWithEmailAndPassword('employer@acme.com', 'password123');
+
+    const job1Ref = db.collection('jobs').doc('job-react-developer');
+    const job1Snap = await job1Ref.get();
+    if (!job1Snap.exists) {
+      await job1Ref.set({
+        id: 'job-react-developer',
+        employerUid: employerUid || 'mock-employer-uid',
+        companyName: 'Acme Solutions',
+        title: 'Senior React Developer',
+        description: 'We are seeking a highly skilled Senior React Developer to join our growing product team. You will lead frontend architecture, implement complex UI interactions, and collaborate with backend engineers.',
+        location: 'Nairobi, Kenya (Hybrid)',
+        salaryRange: '$2,000 - $3,500 / month',
+        requirements: ['React', 'TypeScript', 'Vite', 'Firebase', 'State Management'],
+        createdAt: firebase.firestore.Timestamp.now()
+      });
+
+      if (c1Uid) {
+        await job1Ref.collection('applications').doc(c1Uid).set({
+          candidateUid: c1Uid,
+          appliedAt: firebase.firestore.Timestamp.now()
+        });
+      }
+      if (c2Uid) {
+        await job1Ref.collection('applications').doc(c2Uid).set({
+          candidateUid: c2Uid,
+          appliedAt: firebase.firestore.Timestamp.now()
+        });
+      }
+    }
+
+    const job2Ref = db.collection('jobs').doc('job-backend-node');
+    const job2Snap = await job2Ref.get();
+    if (!job2Snap.exists) {
+      await job2Ref.set({
+        id: 'job-backend-node',
+        employerUid: employerUid || 'mock-employer-uid',
+        companyName: 'Acme Solutions',
+        title: 'Backend Node.js Engineer',
+        description: 'Join our backend systems team to scale our server-side microservices. Responsible for designing robust APIs, database migrations, and configuring CI/CD pipelines.',
+        location: 'Remote (Africa)',
+        salaryRange: '$1,800 - $3,000 / month',
+        requirements: ['Node.js', 'Express', 'PostgreSQL', 'Docker', 'REST APIs'],
+        createdAt: firebase.firestore.Timestamp.now()
+      });
+    }
+
+    const job3Ref = db.collection('jobs').doc('job-product-designer');
+    const job3Snap = await job3Ref.get();
+    if (!job3Snap.exists) {
+      await job3Ref.set({
+        id: 'job-product-designer',
+        employerUid: employerUid || 'mock-employer-uid',
+        companyName: 'Acme Solutions',
+        title: 'Product Designer (UI/UX)',
+        description: 'Seeking a UI/UX Product Designer to design beautiful interfaces. You will create user personas, layout interactive wireframes, and craft polished UI designs in Figma.',
+        location: 'Nairobi, Kenya',
+        salaryRange: '$1,500 - $2,500 / month',
+        requirements: ['Figma', 'UI/UX Design', 'Wireframing', 'User Research'],
+        createdAt: firebase.firestore.Timestamp.now()
+      });
+    }
+  } catch (err) {
+    console.error('Job seeding failed:', err);
+  }
 
   // Sign out the last user so client is back in guest state
   await auth.signOut();
@@ -2035,6 +2120,527 @@ const adminDashboardRoute = createRoute({
 });
 
 // ================================================================
+// Page Component: Candidate Jobs List (Candidate Route)
+// ================================================================
+const candidateJobsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/candidates/jobs',
+  component: () => {
+    const { currentUser, userDoc } = useAuth();
+    const navigate = useNavigate();
+    const [selectedJob, setSelectedJob] = useState<JobDoc | null>(null);
+
+    useEffect(() => {
+      if (!currentUser) navigate({ to: '/candidates/login' });
+    }, [currentUser]);
+
+    // Fetch all jobs
+    const { data: jobs, isLoading, error } = useQuery<JobDoc[]>({
+      queryKey: ['jobs'],
+      queryFn: async () => {
+        const snap = await db.collection('jobs').orderBy('createdAt', 'desc').get();
+        return snap.docs.map(d => d.data() as JobDoc);
+      },
+      enabled: !!currentUser,
+    });
+
+    if (userDoc?.role !== 'candidate') return <div className="page-loader"><p>Access Denied.</p></div>;
+
+    return (
+      <div className="candidates-page">
+        <div className="container--wide">
+          <div style={{ marginBottom: 'var(--space-8)' }}>
+            <h1 style={{ fontSize: '2rem', fontWeight: 800 }}>Available Opportunities</h1>
+            <p style={{ color: 'var(--clr-neutral-500)' }}>Explore openings and express interest directly</p>
+          </div>
+
+          {isLoading ? (
+            <div className="page-loader">
+              <div className="spinner"></div>
+            </div>
+          ) : error ? (
+            <div className="empty-state"><p>Error retrieving jobs.</p></div>
+          ) : !jobs || jobs.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state__icon">💼</div>
+              <h3>No jobs posted</h3>
+              <p>Check back later for new opportunities.</p>
+            </div>
+          ) : (
+            <div className="grid-3">
+              {jobs.map(job => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  candidateUid={currentUser!.uid}
+                  onViewDetails={() => setSelectedJob(job)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {selectedJob && (
+          <JobDetailModal
+            job={selectedJob}
+            candidateUid={currentUser!.uid}
+            onClose={() => setSelectedJob(null)}
+          />
+        )}
+      </div>
+    );
+  }
+});
+
+// Helper component for Job Card in Candidates search
+function JobCard({ job, candidateUid, onViewDetails }: { job: JobDoc; candidateUid: string; onViewDetails: () => void }) {
+  const { data: hasApplied, refetch } = useQuery({
+    queryKey: ['job-application', job.id, candidateUid],
+    queryFn: async () => {
+      const snap = await db.collection('jobs').doc(job.id).collection('applications').doc(candidateUid).get();
+      return snap.exists;
+    }
+  });
+
+  const expressInterestMutation = useMutation({
+    mutationFn: async () => {
+      const docRef = db.collection('jobs').doc(job.id).collection('applications').doc(candidateUid);
+      if (hasApplied) {
+        await docRef.delete();
+      } else {
+        await docRef.set({
+          candidateUid,
+          appliedAt: firebase.firestore.Timestamp.now()
+        });
+      }
+    },
+    onSuccess: () => {
+      showToast(hasApplied ? 'Withdrew interest' : 'Expressed interest successfully!');
+      refetch();
+    },
+    onError: (err: any) => {
+      showToast('Action failed: ' + err.message, 'error');
+    }
+  });
+
+  return (
+    <div className="candidate-card" onClick={onViewDetails} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div className="candidate-card__inner" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <div className="candidate-card__id">{job.companyName}</div>
+          <h3 className="candidate-card__name" style={{ fontSize: '1.2rem', margin: '4px 0' }}>{job.title}</h3>
+          <div style={{ fontSize: '0.8rem', color: 'var(--clr-neutral-500)', display: 'flex', gap: '8px' }}>
+            <span>📍 {job.location}</span>
+            {job.salaryRange && <span>💰 {job.salaryRange}</span>}
+          </div>
+        </div>
+
+        <p className="candidate-card__bio" style={{ fontSize: '0.87rem', flex: 1 }}>{job.description}</p>
+
+        <div className="candidate-card__skills" style={{ margin: 'var(--space-3) 0' }}>
+          {job.requirements?.slice(0, 3).map(r => (
+            <span key={r} className="badge badge--primary">{r}</span>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'auto' }}>
+          <button className="btn btn--outline btn--sm" style={{ flex: 1 }}>View Job</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); expressInterestMutation.mutate(); }}
+            disabled={expressInterestMutation.isPending}
+            className={`btn btn--sm ${hasApplied ? 'btn--accent' : 'btn--primary'}`}
+          >
+            {hasApplied ? '★ Interested' : '☆ Express Interest'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Job detail modal for candidates
+function JobDetailModal({ job, candidateUid, onClose }: { job: JobDoc; candidateUid: string; onClose: () => void }) {
+  const { data: hasApplied, refetch } = useQuery({
+    queryKey: ['job-application', job.id, candidateUid],
+    queryFn: async () => {
+      const snap = await db.collection('jobs').doc(job.id).collection('applications').doc(candidateUid).get();
+      return snap.exists;
+    }
+  });
+
+  const toggleInterest = async () => {
+    try {
+      const docRef = db.collection('jobs').doc(job.id).collection('applications').doc(candidateUid);
+      if (hasApplied) {
+        await docRef.delete();
+        showToast('Withdrew interest');
+      } else {
+        await docRef.set({
+          candidateUid,
+          appliedAt: firebase.firestore.Timestamp.now()
+        });
+        showToast('Expressed interest successfully!');
+      }
+      refetch();
+    } catch (err: any) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Job details">
+        <div className="modal__header">
+          <h3>Job Details</h3>
+          <button className="modal__close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal__body">
+          <div style={{ marginBottom: 'var(--space-5)' }}>
+            <div className="candidate-card__id" style={{ fontSize: '1rem' }}>{job.companyName}</div>
+            <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '6px 0' }}>{job.title}</h2>
+            <div style={{ display: 'flex', gap: 'var(--space-4)', color: 'var(--clr-neutral-600)', fontSize: '0.9rem' }}>
+              <span>📍 {job.location}</span>
+              {job.salaryRange && <span>💰 {job.salaryRange}</span>}
+            </div>
+          </div>
+
+          <div className="modal__section">
+            <div className="modal__section-title">Description</div>
+            <p style={{ fontSize: '0.95rem', color: 'var(--clr-neutral-700)', whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{job.description}</p>
+          </div>
+
+          {job.requirements && job.requirements.length > 0 && (
+            <div className="modal__section">
+              <div className="modal__section-title">Requirements &amp; Tech Stack</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                {job.requirements.map(r => <span key={r} className="badge badge--primary">{r}</span>)}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 'var(--space-3)', borderTop: '1px solid var(--clr-neutral-100)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-5)' }}>
+            <button onClick={toggleInterest} className={`btn ${hasApplied ? 'btn--accent' : 'btn--primary'}`} style={{ flex: 1 }}>
+              {hasApplied ? '★ Interest Expressed' : '☆ Express Interest in this Role'}
+            </button>
+            <button onClick={onClose} className="btn btn--outline">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================
+// Page Component: Employer Jobs Directory (Employer Route)
+// ================================================================
+const employerJobsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/employers/jobs',
+  component: () => {
+    const { currentUser, roleDoc } = useAuth();
+    const navigate = useNavigate();
+    const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
+    const emp = roleDoc as EmployerDoc;
+
+    useEffect(() => {
+      if (!currentUser) navigate({ to: '/employers/login' });
+    }, [currentUser]);
+
+    // Fetch jobs posted by this employer
+    const { data: myJobs, isLoading, refetch } = useQuery<JobDoc[]>({
+      queryKey: ['my-jobs', currentUser?.uid],
+      queryFn: async () => {
+        const snap = await db.collection('jobs')
+          .where('employerUid', '==', currentUser!.uid)
+          .orderBy('createdAt', 'desc')
+          .get();
+        return snap.docs.map(d => d.data() as JobDoc);
+      },
+      enabled: !!currentUser && !!emp && emp.approvalStatus === 'approved',
+    });
+
+    if (!emp) return <div className="page-loader"><div className="spinner"></div></div>;
+
+    if (emp.approvalStatus !== 'approved') {
+      return (
+        <div className="pending-screen">
+          <div className="pending-box">
+            <div className="pending-box__icon">⏳</div>
+            <h2>Awaiting Verification</h2>
+            <p style={{ color: 'var(--clr-neutral-600)', margin: '12px 0 24px' }}>
+              Your account must be approved before you can post jobs.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    const handleDeleteJob = async (jobId: string) => {
+      if (!confirm('Are you sure you want to delete this job listing?')) return;
+      try {
+        await db.collection('jobs').doc(jobId).delete();
+        showToast('Job listing deleted successfully.');
+        refetch();
+      } catch (err: any) {
+        showToast('Failed to delete job: ' + err.message, 'error');
+      }
+    };
+
+    return (
+      <div className="candidates-page">
+        <div className="container--wide">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-8)' }}>
+            <div>
+              <h1 style={{ fontSize: '2rem', fontWeight: 800 }}>Job Postings</h1>
+              <p style={{ color: 'var(--clr-neutral-500)' }}>Manage your active vacancies and view candidate interest</p>
+            </div>
+            <Link to="/employers/jobs/new" className="btn btn--primary">+ Post a Job</Link>
+          </div>
+
+          {isLoading ? (
+            <div className="page-loader"><div className="spinner"></div></div>
+          ) : !myJobs || myJobs.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state__icon">💼</div>
+              <h3>No jobs posted yet</h3>
+              <p>Get started by creating your first job posting.</p>
+              <Link to="/employers/jobs/new" className="btn btn--accent" style={{ marginTop: 'var(--space-4)' }}>Create Job Listing</Link>
+            </div>
+          ) : (
+            <div className="grid-3">
+              {myJobs.map(job => (
+                <div key={job.id} className="candidate-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  <div className="candidate-card__inner" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ marginBottom: 'var(--space-3)' }}>
+                      <h3 className="candidate-card__name" style={{ fontSize: '1.25rem' }}>{job.title}</h3>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--clr-neutral-500)', marginTop: '4px' }}>
+                        <span>📍 {job.location}</span>
+                        {job.salaryRange && <span style={{ marginLeft: '12px' }}>💰 {job.salaryRange}</span>}
+                      </div>
+                    </div>
+
+                    <p className="candidate-card__bio" style={{ fontSize: '0.87rem', flex: 1 }}>{job.description}</p>
+
+                    <div className="candidate-card__actions" style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-4)' }}>
+                      <button onClick={() => setSelectedJobId(job.id)} className="btn btn--outline btn--sm" style={{ flex: 1 }}>
+                        👥 View Applicants
+                      </button>
+                      <button onClick={() => handleDeleteJob(job.id)} className="btn btn--danger btn--sm" style={{ padding: '6px 12px' }}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {selectedJobId && (
+          <ApplicantsModal
+            jobId={selectedJobId}
+            onClose={() => setSelectedJobId(null)}
+          />
+        )}
+      </div>
+    );
+  }
+});
+
+// Modal to view candidates who applied to a specific job
+function ApplicantsModal({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateDoc | null>(null);
+
+  // Fetch applicant documents
+  const { data: applications, isLoading: appsLoading } = useQuery({
+    queryKey: ['applications', jobId],
+    queryFn: async () => {
+      const snap = await db.collection('jobs').doc(jobId).collection('applications').get();
+      return snap.docs.map(d => d.data());
+    }
+  });
+
+  // Fetch candidate profiles for those applications
+  const { data: profiles, isLoading: profilesLoading } = useQuery<CandidateDoc[]>({
+    queryKey: ['applicant-profiles', applications],
+    queryFn: async () => {
+      if (!applications || applications.length === 0) return [];
+      const promises = applications.map(app =>
+        db.collection('candidates').doc(app.candidateUid).get()
+      );
+      const snaps = await Promise.all(promises);
+      return snaps.filter(s => s.exists).map(s => s.data() as CandidateDoc);
+    },
+    enabled: !!applications && applications.length > 0
+  });
+
+  const isLoading = appsLoading || (applications && applications.length > 0 && profilesLoading);
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Job Applicants">
+        <div className="modal__header">
+          <h3>Job Applicants</h3>
+          <button className="modal__close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal__body">
+          {isLoading ? (
+            <div className="page-loader"><div className="spinner"></div></div>
+          ) : !profiles || profiles.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state__icon">👥</div>
+              <h3>No applications yet</h3>
+              <p>Candidates will show up here once they express interest.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {profiles.map(p => (
+                <div
+                  key={p.uid}
+                  className="employer-row"
+                  onClick={() => setSelectedCandidate(p)}
+                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                >
+                  <div>
+                    <div className="employer-row__name">{p.fullName}</div>
+                    <div className="employer-row__meta">
+                      ID: {p.kubasaId} · Email: {p.email} {p.phone && `· Phone: ${p.phone}`}
+                    </div>
+                  </div>
+                  <button className="btn btn--outline btn--sm">View Profile</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {selectedCandidate && (
+          <CandidateDetailModal
+            candidate={selectedCandidate}
+            onClose={() => setSelectedCandidate(null)}
+            isShortlisted={false}
+            onToggleShortlist={async () => {
+              showToast('You can add this candidate to your shortlist from the candidate tab.');
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================
+// Page Component: Post New Job (Employer Route)
+// ================================================================
+const employerJobsNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/employers/jobs/new',
+  component: () => {
+    const { currentUser, roleDoc } = useAuth();
+    const navigate = useNavigate();
+    const [loading, setLoading] = useState(false);
+
+    const emp = roleDoc as EmployerDoc;
+
+    useEffect(() => {
+      if (!currentUser) navigate({ to: '/employers/login' });
+    }, [currentUser]);
+
+    if (!emp) return <div className="page-loader"><div className="spinner"></div></div>;
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const data = new FormData(form);
+      const title = data.get('title') as string;
+      const location = data.get('location') as string;
+      const salaryRange = data.get('salaryRange') as string;
+      const description = data.get('description') as string;
+      const requirementsRaw = data.get('requirements') as string;
+
+      if (!title || !location || !description) {
+        showToast('Please fill in all required fields.', 'error');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const jobId = db.collection('jobs').doc().id; // generate auto-id
+        const requirements = requirementsRaw
+          ? requirementsRaw.split(',').map(r => r.trim()).filter(Boolean)
+          : [];
+
+        await db.collection('jobs').doc(jobId).set({
+          id: jobId,
+          employerUid: currentUser!.uid,
+          companyName: emp.companyName,
+          title,
+          location,
+          salaryRange: salaryRange || '',
+          description,
+          requirements,
+          createdAt: firebase.firestore.Timestamp.now()
+        });
+
+        showToast('Job listing published successfully!');
+        navigate({ to: '/employers/jobs' });
+      } catch (err: any) {
+        console.error(err);
+        showToast('Failed to post job: ' + err.message, 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    return (
+      <div className="auth-page">
+        <div className="auth-box" style={{ maxWidth: '600px' }}>
+          <h1 className="auth-box__title" style={{ textAlign: 'left', marginBottom: 'var(--space-2)' }}>Post a New Job</h1>
+          <p className="auth-box__sub" style={{ textAlign: 'left', marginBottom: 'var(--space-6)' }}>Find qualified talent on the Kubasa directory</p>
+
+          <form onSubmit={handleSubmit} className="form-section">
+            <div className="form-group">
+              <label className="form-label">Job Title <span className="required">*</span></label>
+              <input name="title" required className="form-input" placeholder="e.g. Senior Frontend Engineer" />
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Location <span className="required">*</span></label>
+                <input name="location" required className="form-input" placeholder="e.g. Nairobi, Kenya or Remote" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Salary Range</label>
+                <input name="salaryRange" className="form-input" placeholder="e.g. $1,500 - $2,500 / month" />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Job Description <span className="required">*</span></label>
+              <textarea name="description" required className="form-textarea" placeholder="Detail the role, responsibilities, and benefits..." rows={5} />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Requirements / Skills</label>
+              <input name="requirements" className="form-input" placeholder="React, TypeScript, CSS (comma separated)" />
+              <span className="form-hint">Provide skills separated by commas</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+              <button type="submit" disabled={loading} className="btn btn--primary btn--lg" style={{ flex: 1 }}>
+                {loading ? 'Publishing...' : 'Publish Job Listing'}
+              </button>
+              <Link to="/employers/jobs" className="btn btn--outline">Cancel</Link>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+});
+
+// ================================================================
 // Router Definition
 // ================================================================
 const routeTree = rootRoute.addChildren([
@@ -2042,10 +2648,13 @@ const routeTree = rootRoute.addChildren([
   candidateRegisterRoute,
   candidateLoginRoute,
   candidateProfileRoute,
+  candidateJobsRoute,
   employerRegisterRoute,
   employerLoginRoute,
   employerCandidatesRoute,
   employerShortlistRoute,
+  employerJobsRoute,
+  employerJobsNewRoute,
   adminLoginRoute,
   adminDashboardRoute,
 ]);
