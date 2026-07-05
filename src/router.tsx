@@ -137,6 +137,19 @@ function useAuth() {
 }
 
 // ================================================================
+// SEO / Document Metadata Hook
+// ================================================================
+function useDocumentMetadata(title: string, description: string) {
+  useEffect(() => {
+    document.title = title;
+    const metaDesc = document.querySelector('meta[name="description"]');
+    if (metaDesc) {
+      metaDesc.setAttribute('content', description);
+    }
+  }, [title, description]);
+}
+
+// ================================================================
 // Sequential Kubasa ID Generator Transaction
 // ================================================================
 async function generateKubasaId(): Promise<string> {
@@ -224,9 +237,9 @@ const rootRoute = createRootRoute({
               </div>
 
               {/* Actions / User Profile */}
-              <div className="navbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <div className="navbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
                 {!currentUser ? (
-                  <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
                     <Link to="/candidates/register" className="btn btn--outline btn--sm">Join as Candidate</Link>
                     <Link to="/employers/register" className="btn btn--accent btn--sm">Post Jobs</Link>
                   </div>
@@ -531,6 +544,7 @@ const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: () => {
+    useDocumentMetadata("Kubasa | Africa's Premier HR Platform", "Kubasa connects job seekers with verified employers across Africa. Get your unique Kubasa ID and stand out from the crowd.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -637,6 +651,19 @@ const homeRoute = createRoute({
             </div>
           </div>
         </section>
+
+        {/* Footer */}
+        <footer className="footer">
+          <div className="container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <div className="footer__brand">Kubasa</div>
+            <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.6)', maxWidth: '500px', marginTop: 'var(--space-2)' }}>
+              Connecting the brightest talent with industry-leading organizations across Africa.
+            </p>
+            <div className="footer__copy">
+              © {new Date().getFullYear()} Kubasa. All rights reserved.
+            </div>
+          </div>
+        </footer>
       </div>
     );
   }
@@ -649,6 +676,7 @@ const candidateRegisterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/candidates/register',
   component: () => {
+    useDocumentMetadata("Register as Candidate | Kubasa", "Join Kubasa to get your unique lifetime Kubasa ID, build your professional profile, and get discovered by top African employers.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -814,6 +842,7 @@ const candidateLoginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/candidates/login',
   component: () => {
+    useDocumentMetadata("Candidate Login | Kubasa", "Access your Kubasa candidate account to manage your profile, CV, search visibility, and job applications.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -893,6 +922,7 @@ const candidateProfileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/candidates/profile',
   component: () => {
+    useDocumentMetadata("My Profile | Kubasa", "Manage your candidate profile details, work history, education, skill tags, and CV resume document.");
     const { currentUser, roleDoc, refetchRoleDoc } = useAuth();
     const navigate = useNavigate();
 
@@ -1167,7 +1197,7 @@ const candidateProfileRoute = createRoute({
                       <label className="form-label">Description</label>
                       <textarea value={newExp.description} onChange={e => setNewExp({ ...newExp, description: e.target.value })} className="form-textarea" placeholder="Key responsibilities" rows={2} />
                     </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
                       <button type="button" onClick={addExperience} className="btn btn--primary btn--sm">Add</button>
                       <button type="button" onClick={() => setShowExpForm(false)} className="btn btn--ghost btn--sm">Cancel</button>
                     </div>
@@ -1214,7 +1244,7 @@ const candidateProfileRoute = createRoute({
                         <input value={newEdu.year} onChange={e => setNewEdu({ ...newEdu, year: e.target.value })} className="form-input" placeholder="e.g. 2020" />
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
                       <button type="button" onClick={addEducation} className="btn btn--primary btn--sm">Add</button>
                       <button type="button" onClick={() => setShowEduForm(false)} className="btn btn--ghost btn--sm">Cancel</button>
                     </div>
@@ -1271,6 +1301,7 @@ const employerRegisterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/employers/register',
   component: () => {
+    useDocumentMetadata("Register as Employer | Kubasa", "Register your company or organization on Kubasa to search for top talent across Africa and publish job listings.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -1408,6 +1439,7 @@ const employerLoginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/employers/login',
   component: () => {
+    useDocumentMetadata("Employer Login | Kubasa", "Access your employer dashboard on Kubasa to search verified candidates and manage active job listings.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -1552,7 +1584,7 @@ function CandidateDetailModal({ candidate: c, onClose, isShortlisted, onToggleSh
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 'var(--space-3)', borderTop: '1px solid var(--clr-neutral-100)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-4)', borderTop: '1px solid var(--clr-neutral-100)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
             {c.cvUrl ? (
               <a href={c.cvUrl} target="_blank" rel="noreferrer" className="btn btn--primary">📄 Download CV</a>
             ) : (
@@ -1575,6 +1607,7 @@ const employerCandidatesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/employers/candidates',
   component: () => {
+    useDocumentMetadata("Search Candidates | Kubasa", "Search candidate registry sorted ascending by unique lifetime Kubasa IDs.");
     const { currentUser, roleDoc, refetchRoleDoc } = useAuth();
     const navigate = useNavigate();
     const [filter, setFilter] = useState('');
@@ -1765,6 +1798,7 @@ const employerShortlistRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/employers/shortlist',
   component: () => {
+    useDocumentMetadata("Shortlisted Candidates | Kubasa", "Review profiles of shortlisted candidates and view their resume attachments.");
     const { currentUser, roleDoc, refetchRoleDoc } = useAuth();
     const navigate = useNavigate();
     const [selectedCandidate, setSelectedCandidate] = useState<CandidateDoc | null>(null);
@@ -1893,6 +1927,7 @@ const adminLoginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/login',
   component: () => {
+    useDocumentMetadata("Admin Access | Kubasa", "Authorized login for Kubasa platform managers and administrators.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -1968,6 +2003,7 @@ const adminDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/admin/dashboard',
   component: () => {
+    useDocumentMetadata("Admin Dashboard | Kubasa", "Overview platform statistics, verify employer registration requests, and manage access privileges.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
 
@@ -2105,7 +2141,7 @@ const adminDashboardRoute = createRoute({
                       )}
                     </div>
                   </div>
-                  <div className="employer-row__actions" style={{ display: 'flex', gap: '8px' }}>
+                  <div className="employer-row__actions" style={{ display: 'flex', gap: 'var(--space-4)' }}>
                     <button onClick={() => handleApprove(emp.uid)} className="btn btn--primary btn--sm">Approve</button>
                     <button onClick={() => handleReject(emp.uid)} className="btn btn--danger btn--sm">Reject</button>
                   </div>
@@ -2126,6 +2162,7 @@ const candidateJobsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/candidates/jobs',
   component: () => {
+    useDocumentMetadata("Browse Jobs | Kubasa", "Explore available job vacancies from verified employers on Kubasa and express your interest.");
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [selectedJob, setSelectedJob] = useState<JobDoc | null>(null);
@@ -2243,7 +2280,7 @@ function JobCard({ job, candidateUid, onViewDetails }: { job: JobDoc; candidateU
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'auto' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'auto' }}>
           <button className="btn btn--outline btn--sm" style={{ flex: 1 }}>View Job</button>
           <button
             onClick={(e) => { e.stopPropagation(); expressInterestMutation.mutate(); }}
@@ -2318,7 +2355,7 @@ function JobDetailModal({ job, candidateUid, onClose }: { job: JobDoc; candidate
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 'var(--space-3)', borderTop: '1px solid var(--clr-neutral-100)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-5)' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-4)', borderTop: '1px solid var(--clr-neutral-100)', paddingTop: 'var(--space-4)', marginTop: 'var(--space-5)' }}>
             <button onClick={toggleInterest} className={`btn ${hasApplied ? 'btn--accent' : 'btn--primary'}`} style={{ flex: 1 }}>
               {hasApplied ? '★ Interest Expressed' : '☆ Express Interest in this Role'}
             </button>
@@ -2337,6 +2374,7 @@ const employerJobsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/employers/jobs',
   component: () => {
+    useDocumentMetadata("My Jobs | Kubasa", "View and manage job vacancies published by your organization and view interested applicants.");
     const { currentUser, roleDoc } = useAuth();
     const navigate = useNavigate();
     const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -2422,7 +2460,7 @@ const employerJobsRoute = createRoute({
 
                     <p className="candidate-card__bio" style={{ fontSize: '0.87rem', flex: 1 }}>{job.description}</p>
 
-                    <div className="candidate-card__actions" style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-4)' }}>
+                    <div className="candidate-card__actions" style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
                       <button onClick={() => setSelectedJobId(job.id)} className="btn btn--outline btn--sm" style={{ flex: 1 }}>
                         👥 View Applicants
                       </button>
@@ -2537,6 +2575,7 @@ const employerJobsNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/employers/jobs/new',
   component: () => {
+    useDocumentMetadata("Post a Job | Kubasa", "Publish a new job opening to hire verified professionals on the Kubasa directory.");
     const { currentUser, roleDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -2627,7 +2666,7 @@ const employerJobsNewRoute = createRoute({
               <span className="form-hint">Provide skills separated by commas</span>
             </div>
 
-            <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
               <button type="submit" disabled={loading} className="btn btn--primary btn--lg" style={{ flex: 1 }}>
                 {loading ? 'Publishing...' : 'Publish Job Listing'}
               </button>
