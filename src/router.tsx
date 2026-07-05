@@ -88,44 +88,97 @@ function useAuthStatus() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    return auth.onAuthStateChanged(async (user) => {
+    let unsubscribeUserDoc: (() => void) | null = null;
+    let unsubscribeRoleDoc: (() => void) | null = null;
+
+    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
+
+      // Clean up previous subscriptions immediately
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+        unsubscribeUserDoc = null;
+      }
+      if (unsubscribeRoleDoc) {
+        unsubscribeRoleDoc();
+        unsubscribeRoleDoc = null;
+      }
+
       if (user) {
-        try {
-          const uSnap = await db.collection('users').doc(user.uid).get();
+        setLoading(true);
+        // Subscribe to user doc
+        unsubscribeUserDoc = db.collection('users').doc(user.uid).onSnapshot((uSnap) => {
           if (uSnap.exists) {
             const uData = uSnap.data() as UserDoc;
             setUserDoc(uData);
 
-            if (uData.role === 'candidate') {
-              const cSnap = await db.collection('candidates').doc(user.uid).get();
-              if (cSnap.exists) setRoleDoc(cSnap.data() as CandidateDoc);
-            } else if (uData.role === 'employer') {
-              const eSnap = await db.collection('employers').doc(user.uid).get();
-              if (eSnap.exists) setRoleDoc(eSnap.data() as EmployerDoc);
+            // Clean up previous role subscription if any
+            if (unsubscribeRoleDoc) {
+              unsubscribeRoleDoc();
+              unsubscribeRoleDoc = null;
             }
+
+            // Subscribe to candidate/employer doc based on role
+            if (uData.role === 'candidate') {
+              unsubscribeRoleDoc = db.collection('candidates').doc(user.uid).onSnapshot((cSnap) => {
+                if (cSnap.exists) {
+                  setRoleDoc(cSnap.data() as CandidateDoc);
+                } else {
+                  setRoleDoc(null);
+                }
+              });
+            } else if (uData.role === 'employer') {
+              unsubscribeRoleDoc = db.collection('employers').doc(user.uid).onSnapshot((eSnap) => {
+                if (eSnap.exists) {
+                  setRoleDoc(eSnap.data() as EmployerDoc);
+                } else {
+                  setRoleDoc(null);
+                }
+              });
+            } else {
+              setRoleDoc(null);
+            }
+            setLoading(false);
+          } else {
+            // User exists in Firebase Auth but user doc is not created in Firestore yet
+            setUserDoc(null);
+            setRoleDoc(null);
+            setLoading(false);
           }
-        } catch (err) {
-          console.error('Error fetching auth user documents:', err);
-        }
+        }, (err) => {
+          console.error('Error listening to user document:', err);
+          setLoading(false);
+        });
       } else {
         setUserDoc(null);
         setRoleDoc(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUserDoc) unsubscribeUserDoc();
+      if (unsubscribeRoleDoc) unsubscribeRoleDoc();
+    };
   }, []);
 
-  return { currentUser, userDoc, roleDoc, loading, refetchRoleDoc: async () => {
-    if (!currentUser || !userDoc) return;
-    if (userDoc.role === 'candidate') {
-      const cSnap = await db.collection('candidates').doc(currentUser.uid).get();
-      if (cSnap.exists) setRoleDoc(cSnap.data() as CandidateDoc);
-    } else if (userDoc.role === 'employer') {
-      const eSnap = await db.collection('employers').doc(currentUser.uid).get();
-      if (eSnap.exists) setRoleDoc(eSnap.data() as EmployerDoc);
+  return {
+    currentUser,
+    userDoc,
+    roleDoc,
+    loading,
+    refetchRoleDoc: async () => {
+      if (!currentUser || !userDoc) return;
+      if (userDoc.role === 'candidate') {
+        const cSnap = await db.collection('candidates').doc(currentUser.uid).get();
+        if (cSnap.exists) setRoleDoc(cSnap.data() as CandidateDoc);
+      } else if (userDoc.role === 'employer') {
+        const eSnap = await db.collection('employers').doc(currentUser.uid).get();
+        if (eSnap.exists) setRoleDoc(eSnap.data() as EmployerDoc);
+      }
     }
-  }};
+  };
 }
 
 const AuthContext = React.createContext<ReturnType<typeof useAuthStatus> | null>(null);
@@ -681,6 +734,60 @@ const candidateRegisterRoute = createRoute({
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
 
+    const handleGoogleSignIn = async () => {
+      setLoading(true);
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        const cred = await auth.signInWithPopup(provider);
+        if (!cred.user) throw new Error('Google Sign-In failed');
+        const { uid, email, displayName, phoneNumber } = cred.user;
+
+        const uSnap = await db.collection('users').doc(uid).get();
+        if (uSnap.exists) {
+          const uData = uSnap.data() as UserDoc;
+          if (uData.role !== 'candidate') {
+            showToast(`This Google account is registered as ${uData.role === 'employer' ? 'an Employer' : 'an Admin'}. Please use the correct portal.`, 'error');
+            await auth.signOut();
+            return;
+          }
+          showToast('Signed in successfully');
+          navigate({ to: '/candidates/profile' });
+        } else {
+          const now = firebase.firestore.Timestamp.now();
+          await db.collection('users').doc(uid).set({
+            uid,
+            email: email || '',
+            role: 'candidate',
+            createdAt: now
+          });
+          const kubasaId = await generateKubasaId();
+          await db.collection('candidates').doc(uid).set({
+            uid,
+            kubasaId,
+            fullName: displayName || email?.split('@')[0] || 'Google User',
+            email: email || '',
+            phone: phoneNumber || '',
+            bio: '',
+            skills: [],
+            education: [],
+            workExperience: [],
+            cvUrl: '',
+            cvPath: '',
+            isLookingForWork: true,
+            createdAt: now,
+            updatedAt: now
+          });
+          showToast(`Account created! Your Kubasa ID: ${kubasaId}`, 'success');
+          navigate({ to: '/candidates/profile' });
+        }
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.message || 'Google Sign-In failed', 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     useEffect(() => {
       if (currentUser && userDoc) {
         if (userDoc.role === 'candidate') navigate({ to: '/candidates/profile' });
@@ -826,6 +933,23 @@ const candidateRegisterRoute = createRoute({
             </button>
           </form>
 
+          <div className="auth-divider">or</div>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleGoogleSignIn}
+            className="btn btn--google btn--lg w-full"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ marginRight: '8px' }}>
+              <path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.47h4.84c-.21 1.12-.84 2.07-1.79 2.7v2.25h2.9c1.69-1.55 2.69-3.85 2.69-6.58z"/>
+              <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.2l-2.9-2.25c-.8.54-1.84.87-3.06.87-2.35 0-4.34-1.58-5.05-3.71H.92v2.33C2.42 16.06 5.48 18 9 18z"/>
+              <path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.12-.28-1.71s.1-1.17.28-1.71V4.96H.92A8.996 8.996 0 0 0 0 9c0 1.45.35 2.82.92 4.04l3.03-2.33z"/>
+              <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.42 0 9 0 5.48 0 2.42 1.94.92 4.96l3.03 2.33c.71-2.13 2.7-3.71 5.05-3.71z"/>
+            </svg>
+            Continue with Google
+          </button>
+
           <div className="auth-box__footer">
             Already have an account? <Link to="/candidates/login">Sign in here</Link>
           </div>
@@ -846,6 +970,60 @@ const candidateLoginRoute = createRoute({
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+
+    const handleGoogleSignIn = async () => {
+      setLoading(true);
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        const cred = await auth.signInWithPopup(provider);
+        if (!cred.user) throw new Error('Google Sign-In failed');
+        const { uid, email, displayName, phoneNumber } = cred.user;
+
+        const uSnap = await db.collection('users').doc(uid).get();
+        if (uSnap.exists) {
+          const uData = uSnap.data() as UserDoc;
+          if (uData.role !== 'candidate') {
+            showToast(`This Google account is registered as ${uData.role === 'employer' ? 'an Employer' : 'an Admin'}. Please use the correct portal.`, 'error');
+            await auth.signOut();
+            return;
+          }
+          showToast('Signed in successfully');
+          navigate({ to: '/candidates/profile' });
+        } else {
+          const now = firebase.firestore.Timestamp.now();
+          await db.collection('users').doc(uid).set({
+            uid,
+            email: email || '',
+            role: 'candidate',
+            createdAt: now
+          });
+          const kubasaId = await generateKubasaId();
+          await db.collection('candidates').doc(uid).set({
+            uid,
+            kubasaId,
+            fullName: displayName || email?.split('@')[0] || 'Google User',
+            email: email || '',
+            phone: phoneNumber || '',
+            bio: '',
+            skills: [],
+            education: [],
+            workExperience: [],
+            cvUrl: '',
+            cvPath: '',
+            isLookingForWork: true,
+            createdAt: now,
+            updatedAt: now
+          });
+          showToast(`Account created! Your Kubasa ID: ${kubasaId}`, 'success');
+          navigate({ to: '/candidates/profile' });
+        }
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.message || 'Google Sign-In failed', 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
 
     useEffect(() => {
       if (currentUser && userDoc) {
@@ -905,6 +1083,23 @@ const candidateLoginRoute = createRoute({
               {loading ? 'Signing In...' : 'Sign In →'}
             </button>
           </form>
+
+          <div className="auth-divider">or</div>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleGoogleSignIn}
+            className="btn btn--google btn--lg w-full"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ marginRight: '8px' }}>
+              <path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.47h4.84c-.21 1.12-.84 2.07-1.79 2.7v2.25h2.9c1.69-1.55 2.69-3.85 2.69-6.58z"/>
+              <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.2l-2.9-2.25c-.8.54-1.84.87-3.06.87-2.35 0-4.34-1.58-5.05-3.71H.92v2.33C2.42 16.06 5.48 18 9 18z"/>
+              <path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.12-.28-1.71s.1-1.17.28-1.71V4.96H.92A8.996 8.996 0 0 0 0 9c0 1.45.35 2.82.92 4.04l3.03-2.33z"/>
+              <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.42 0 9 0 5.48 0 2.42 1.94.92 4.96l3.03 2.33c.71-2.13 2.7-3.71 5.05-3.71z"/>
+            </svg>
+            Continue with Google
+          </button>
 
           <div className="auth-box__footer">
             New here? <Link to="/candidates/register">Create a candidate profile</Link>
@@ -1306,6 +1501,55 @@ const employerRegisterRoute = createRoute({
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
 
+    const handleGoogleSignIn = async () => {
+      setLoading(true);
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        const cred = await auth.signInWithPopup(provider);
+        if (!cred.user) throw new Error('Google Sign-In failed');
+        const { uid, email, displayName, phoneNumber } = cred.user;
+
+        const uSnap = await db.collection('users').doc(uid).get();
+        if (uSnap.exists) {
+          const uData = uSnap.data() as UserDoc;
+          if (uData.role !== 'employer') {
+            showToast(`This Google account is registered as ${uData.role === 'candidate' ? 'a Candidate' : 'an Admin'}. Please use the correct portal.`, 'error');
+            await auth.signOut();
+            return;
+          }
+          showToast('Signed in successfully');
+          navigate({ to: '/employers/candidates' });
+        } else {
+          const now = firebase.firestore.Timestamp.now();
+          await db.collection('users').doc(uid).set({
+            uid,
+            email: email || '',
+            role: 'employer',
+            createdAt: now
+          });
+          await db.collection('employers').doc(uid).set({
+            uid,
+            companyName: `${displayName || email?.split('@')[0] || 'Google User'}'s Company`,
+            contactName: displayName || email?.split('@')[0] || 'Google User',
+            email: email || '',
+            phone: phoneNumber || '',
+            industry: '',
+            website: '',
+            approvalStatus: 'pending',
+            shortlist: [],
+            createdAt: now
+          });
+          showToast('Employer profile registered! Awaiting admin verification', 'success');
+          navigate({ to: '/employers/candidates' });
+        }
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.message || 'Google Sign-In failed', 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     useEffect(() => {
       if (currentUser && userDoc) {
         if (userDoc.role === 'candidate') navigate({ to: '/candidates/profile' });
@@ -1423,6 +1667,23 @@ const employerRegisterRoute = createRoute({
             </button>
           </form>
 
+          <div className="auth-divider">or</div>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleGoogleSignIn}
+            className="btn btn--google btn--lg w-full"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ marginRight: '8px' }}>
+              <path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.47h4.84c-.21 1.12-.84 2.07-1.79 2.7v2.25h2.9c1.69-1.55 2.69-3.85 2.69-6.58z"/>
+              <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.2l-2.9-2.25c-.8.54-1.84.87-3.06.87-2.35 0-4.34-1.58-5.05-3.71H.92v2.33C2.42 16.06 5.48 18 9 18z"/>
+              <path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.12-.28-1.71s.1-1.17.28-1.71V4.96H.92A8.996 8.996 0 0 0 0 9c0 1.45.35 2.82.92 4.04l3.03-2.33z"/>
+              <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.42 0 9 0 5.48 0 2.42 1.94.92 4.96l3.03 2.33c.71-2.13 2.7-3.71 5.05-3.71z"/>
+            </svg>
+            Continue with Google
+          </button>
+
           <div className="auth-box__footer">
             Already registered? <Link to="/employers/login">Sign in here</Link>
           </div>
@@ -1443,6 +1704,55 @@ const employerLoginRoute = createRoute({
     const { currentUser, userDoc } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+
+    const handleGoogleSignIn = async () => {
+      setLoading(true);
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        const cred = await auth.signInWithPopup(provider);
+        if (!cred.user) throw new Error('Google Sign-In failed');
+        const { uid, email, displayName, phoneNumber } = cred.user;
+
+        const uSnap = await db.collection('users').doc(uid).get();
+        if (uSnap.exists) {
+          const uData = uSnap.data() as UserDoc;
+          if (uData.role !== 'employer') {
+            showToast(`This Google account is registered as ${uData.role === 'candidate' ? 'a Candidate' : 'an Admin'}. Please use the correct portal.`, 'error');
+            await auth.signOut();
+            return;
+          }
+          showToast('Signed in successfully');
+          navigate({ to: '/employers/candidates' });
+        } else {
+          const now = firebase.firestore.Timestamp.now();
+          await db.collection('users').doc(uid).set({
+            uid,
+            email: email || '',
+            role: 'employer',
+            createdAt: now
+          });
+          await db.collection('employers').doc(uid).set({
+            uid,
+            companyName: `${displayName || email?.split('@')[0] || 'Google User'}'s Company`,
+            contactName: displayName || email?.split('@')[0] || 'Google User',
+            email: email || '',
+            phone: phoneNumber || '',
+            industry: '',
+            website: '',
+            approvalStatus: 'pending',
+            shortlist: [],
+            createdAt: now
+          });
+          showToast('Employer profile registered! Awaiting admin verification', 'success');
+          navigate({ to: '/employers/candidates' });
+        }
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.message || 'Google Sign-In failed', 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
 
     useEffect(() => {
       if (currentUser && userDoc) {
@@ -1502,6 +1812,23 @@ const employerLoginRoute = createRoute({
               {loading ? 'Signing In...' : 'Sign In →'}
             </button>
           </form>
+
+          <div className="auth-divider">or</div>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleGoogleSignIn}
+            className="btn btn--google btn--lg w-full"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ marginRight: '8px' }}>
+              <path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.47h4.84c-.21 1.12-.84 2.07-1.79 2.7v2.25h2.9c1.69-1.55 2.69-3.85 2.69-6.58z"/>
+              <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.2l-2.9-2.25c-.8.54-1.84.87-3.06.87-2.35 0-4.34-1.58-5.05-3.71H.92v2.33C2.42 16.06 5.48 18 9 18z"/>
+              <path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.12-.28-1.71s.1-1.17.28-1.71V4.96H.92A8.996 8.996 0 0 0 0 9c0 1.45.35 2.82.92 4.04l3.03-2.33z"/>
+              <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.42 0 9 0 5.48 0 2.42 1.94.92 4.96l3.03 2.33c.71-2.13 2.7-3.71 5.05-3.71z"/>
+            </svg>
+            Continue with Google
+          </button>
 
           <div className="auth-box__footer">
             New here? <Link to="/employers/register">Register organization</Link>
