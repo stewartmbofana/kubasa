@@ -907,3 +907,49 @@ button { font-family: inherit; }
 /* Form Row */
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+
+/* Auth divider and Google button styling */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: var(--space-4) 0;
+  color: var(--clr-neutral-500);
+  font-size: 0.85rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1.5px solid var(--clr-neutral-200);
+}
+
+.auth-divider:not(:empty)::before {
+  margin-right: var(--space-3);
+}
+
+.auth-divider:not(:empty)::after {
+  margin-left: var(--space-3);
+}
+
+.btn--google {
+  background: white;
+  color: var(--clr-neutral-800);
+  border: 1.5px solid var(--clr-neutral-200);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  font-weight: 600;
+  width: 100%;
+}
+
+.btn--google:hover {
+  background: var(--clr-neutral-50);
+  border-color: var(--clr-neutral-300);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+

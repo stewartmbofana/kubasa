@@ -44,7 +44,8 @@
   "auth": {
     "providers": {
       "anonymous": false,
-      "emailPassword": true
+      "emailPassword": true,
+      "google": true
     }
   }
 }
